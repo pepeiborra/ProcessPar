@@ -22,8 +22,8 @@ library
   exposed-modules:
     ProcessPar
 
-executable example
-  hs-source-dirs:      examples
-  main-is:             Example.hs
-  build-depends:       async, base, process-par
-  ghc-options:         -threaded
+-- executable example
+--   hs-source-dirs:      examples
+--   main-is:             Example.hs
+--   build-depends:       async, base, process-par
+--   ghc-options:         -threaded

@@ -9,6 +9,16 @@
 --   While this is usually unnecessary while writing Haskell programs, it can be useful when working with the FFI.
 --   It relies on the 'distributed-closure' package to serialize closures to slave processes.
 --   Note that most of the API calls are blocking, so you will want to pair this library with something like 'async'.
+--   Example:
+--
+-- > purefib :: Int -> IO Int
+-- > purefib = return . fib
+-- >
+-- > main = parMain $ withPar 4 $ \par -> do
+-- >   args <- map read <$> getArgs
+-- >   res <- forConcurrently args $ \n ->
+-- >     try @SomeException $ runPar par (static Dict) (static purefib `cap` cpure (static Dict) n)
+-- >   print res
 module ProcessPar
   ( Par
   , withPar
