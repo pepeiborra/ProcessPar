@@ -87,8 +87,6 @@ withPar poolSize k = flip runContT return $ do
     runners <- forM pp $ \p -> do
       putDebugLn "[master] Spawning slave"
       let sendH = getStdin p
-      hSetBuffering sendH NoBuffering
-      hSetBuffering (getStdout p) NoBuffering
       outp <- L.hGetContents (getStdout p)
       return $ runSlave sendH outp
     runnersT  <- newTVarIO runners
@@ -121,6 +119,7 @@ withPar poolSize k = flip runContT return $ do
         Dict -> do
           let comp :: Closure (IO ()) = static reply `cap` dict `cap` input
           L.hPutStr sendH (encode comp)
+          hFlush sendH
           -- NOTE Error handling
           --  If the slave dies, lazyOutput will not block and instead finish early, which will
           --  cause decode to fail with the error "not enough bytes"
@@ -159,8 +158,6 @@ parMain realMain = do
   where
     setupParServer :: Int -> IO ()
     setupParServer n = do
-      hSetBuffering stdin NoBuffering
-      hSetBuffering stdout NoBuffering
       inp <- L.getContents
       let sayLoud msg = putDebugLn $ "[slave " ++ show n ++ "] " ++ msg
           loopServer inp =
@@ -169,6 +166,7 @@ parMain realMain = do
               Right (rest,_,task) -> do
                 sayLoud "Received task"
                 () <- unclosure task
+                hFlush stdout
                 loopServer rest
       sayLoud "Starting"
       loopServer inp
