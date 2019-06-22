@@ -111,30 +111,30 @@ withPar poolSize k = flip runContT return $ do
           busy <- readIORef busyRef
           return ParStats{..}
     k Par {..}
-  where
-    runSlave :: Handle -> L.ByteString -> RResolver
-    runSlave sendH lazyOutput = RResolver $ \dict input -> do
-      putDebugLn "[master] Sending computation"
-      case unclosure dict of
-        Dict -> do
-          let comp :: Closure (IO ()) = static reply `cap` dict `cap` input
-          L.hPutStr sendH (encode comp)
-          hFlush sendH
-          -- NOTE Error handling
-          --  If the slave dies, lazyOutput will not block and instead finish early, which will
-          --  cause decode to fail with the error "not enough bytes"
-          case decodeOrFail lazyOutput of
-            Right (rest, _, res) -> return (runSlave sendH rest, res >>= decode)
-            Left (_, _, err) -> fail err
 
-    reply :: Dict (Serializable a) -> IO a -> IO ()
+runSlave :: Handle -> L.ByteString -> RResolver
+runSlave sendH lazyOutput = RResolver $ \dict input -> do
+  putDebugLn "[master] Sending computation"
+  case unclosure dict of
+    Dict -> do
+      let comp = static reply `cap` dict `cap` input
+      L.hPutStr sendH (encode comp)
+      hFlush sendH
+      -- NOTE Error handling
+      --  If the slave dies, lazyOutput will not block and instead finish early, which will
+      --  cause decode to fail with the error "not enough bytes"
+      case decodeOrFail lazyOutput of
+        Right (rest, _, res) -> return (runSlave sendH rest, res >>= decode)
+        Left (_, _, err) -> fail err
+  where
+    reply :: Dict (Serializable a) -> IO a -> IO L.ByteString
     reply Dict action = do
       -- NOTE Error handling
       --  We encode twice to guard against lazy exceptions
       bytes <- try @SomeException $ do
         res <- try @SomeException action
         evaluate $ encode $ first show res
-      L.putStr (encode $ first show bytes)
+      return (encode $ first show bytes)
 
 newtype RResolver = RResolver
   { runRResolver :: forall a . Closure (Dict (Serializable a)) -> Closure (IO a) -> IO (RResolver, Either String a)
@@ -153,20 +153,22 @@ parMain :: IO () -> IO ()
 parMain realMain = do
   args <- getArgs
   case args of
-    [x, n] | x == slaveToken -> setupParServer (read n)
+    [x, n] | x == slaveToken -> do
+      inp <- L.hGetContents stdin
+      setupParServer (read n) inp stdout
     _ -> realMain
-  where
-    setupParServer :: Int -> IO ()
-    setupParServer n = do
-      inp <- L.getContents
+
+setupParServer :: Int -> L.ByteString -> Handle -> IO ()
+setupParServer n inp hOut = do
       let sayLoud msg = putDebugLn $ "[slave " ++ show n ++ "] " ++ msg
           loopServer inp =
             case decodeOrFail inp of
               Left (_,_,err) -> fail err
               Right (rest,_,task) -> do
                 sayLoud "Received task"
-                () <- unclosure task
-                hFlush stdout
+                res <- unclosure task
+                L.hPutStr hOut res
+                hFlush hOut
                 loopServer rest
       sayLoud "Starting"
       loopServer inp
