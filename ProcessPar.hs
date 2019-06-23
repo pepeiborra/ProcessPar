@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns     #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TypeOperators #-}
@@ -14,7 +15,7 @@
 -- > purefib :: Int -> IO Int
 -- > purefib = return . fib
 -- >
--- > main = parMain $ withPar 4 $ \par -> do
+-- > main = withPar 4 $ \par -> do
 -- >   args <- map read <$> getArgs
 -- >   res <- forConcurrently args $ \n ->
 -- >     try @SomeException $ runPar par (static Dict) (static purefib `cap` cpure (static Dict) n)
@@ -24,7 +25,6 @@ module ProcessPar
   , withPar
   , viewParStats
   , runPar
-  , parMain
   -- * Reexports from 'Control.Distributed.Closure'
   , Closure
   , Dict(..)
@@ -55,7 +55,8 @@ import Numeric.Natural
 import System.Environment
 import System.IO as IO
 import System.Posix.Types
-import System.Process.Internals (createPipeFd, fdToHandle)
+import qualified System.Process as P
+import System.Posix.Process
 import System.Process.Typed
 import Debug.Trace
 
@@ -75,20 +76,28 @@ data ParStats = ParStats
   }
   deriving Show
 
+newtype RResolver = RResolver
+  { runRResolver :: forall a . Closure (Dict (Serializable a)) -> Closure (IO a) -> IO (RResolver, Either String a)
+  }
+
 -- | Starts a fixed number of slave processes and calls the continuation with a 'Par' handle.
 --   The handle is only valid in the scope of the continuation
 --   and the processes will be deallocated immediately after.
 withPar :: Natural -> (Par -> IO res) -> IO res
-withPar poolSize k = flip runContT return $ do
-  exe <- lift getExecutablePath
-  let slaveProc n = setStdout createPipe $ setStdin createPipe $ proc exe [slaveToken, show n]
-  pp <- forM [1 .. fromIntegral poolSize] $ ContT . withProcess . slaveProc
-  lift $ do
-    runners <- forM pp $ \p -> do
-      putDebugLn "[master] Spawning slave"
-      let sendH = getStdin p
-      outp <- L.hGetContents (getStdout p)
-      return $ runSlave sendH outp
+withPar poolSize k = do
+  runners <- forM [1 .. poolSize] $ \n -> do
+    (hInr,  hInw)  <- P.createPipe
+    (hOutr, hOutw) <- P.createPipe
+    forkProcess $ do
+      inp <- L.hGetContents hInr
+      setupParServer n inp hOutw
+    res <- L.hGetContents hOutr
+    return $ runSlave hInw res
+  par <- makePar runners
+  k par
+
+makePar :: [RResolver] -> IO Par
+makePar runners = do
     runnersT  <- newTVarIO runners
     busyRef   <- newIORef 0
     queuedRef <- newIORef 0
@@ -110,7 +119,9 @@ withPar poolSize k = flip runContT return $ do
           idle <- genericLength <$> readTVarIO runnersT
           busy <- readIORef busyRef
           return ParStats{..}
-    k Par {..}
+    return Par{..}
+  where
+    !poolSize = genericLength runners
 
 runSlave :: Handle -> L.ByteString -> RResolver
 runSlave sendH lazyOutput = RResolver $ \dict input -> do
@@ -136,29 +147,10 @@ runSlave sendH lazyOutput = RResolver $ \dict input -> do
         evaluate $ encode $ first show res
       return (encode $ first show bytes)
 
-newtype RResolver = RResolver
-  { runRResolver :: forall a . Closure (Dict (Serializable a)) -> Closure (IO a) -> IO (RResolver, Either String a)
-  }
-
-slaveToken = "PROCESS_PAR_SLAVE"
-
 --------------------------------------------------------
 -- parMain
 
--- | Wrapper for the 'main' function. Call it like:
---
--- > main = parMain $ do
--- >     ..
-parMain :: IO () -> IO ()
-parMain realMain = do
-  args <- getArgs
-  case args of
-    [x, n] | x == slaveToken -> do
-      inp <- L.hGetContents stdin
-      setupParServer (read n) inp stdout
-    _ -> realMain
-
-setupParServer :: Int -> L.ByteString -> Handle -> IO ()
+setupParServer :: Show id => id -> L.ByteString -> Handle -> IO ()
 setupParServer n inp hOut = do
       let sayLoud msg = putDebugLn $ "[slave " ++ show n ++ "] " ++ msg
           loopServer inp =

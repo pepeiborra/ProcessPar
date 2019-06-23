@@ -18,7 +18,7 @@ fib n = fib (n-1) + fib (n-2)
 purefib :: Int -> IO Int
 purefib = return . fib
 
-main = parMain $ withPar 4 $ \par -> do
+main = withPar 4 $ \par -> do
   args <- map read <$> getArgs
   res <- forConcurrently args $ \n ->
     try @SomeException $ runPar par (static Dict) (static purefib `cap` cpure (static Dict) n)
