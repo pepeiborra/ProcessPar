@@ -1,11 +1,11 @@
-{-# LANGUAGE BangPatterns     #-}
-{-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE TypeOperators #-}
-{-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StaticPointers #-}
+{-# LANGUAGE StaticPointers      #-}
+{-# LANGUAGE TypeApplications    #-}
+{-# LANGUAGE TypeOperators       #-}
 -- | Run computations out of process.
 --   While this is usually unnecessary while writing Haskell programs, it can be useful when working with the FFI.
 --   It relies on the 'distributed-closure' package to serialize closures to slave processes.
@@ -31,34 +31,35 @@ module ProcessPar
   , closure
   , cpure
   , cap
-  ) where
+  )
+where
 
-import Control.Concurrent.STM
-import Control.Distributed.Closure
-import Control.Exception
-import Control.Monad
-import Control.Monad.Trans.Class
-import Control.Monad.Trans.Cont
-import Data.Bifunctor
-import Data.Binary
-import Data.Int
-import Data.List
-import qualified Data.ByteString.Char8 as B
-import qualified Data.ByteString.Lazy.Char8 as L
-import Data.Functor
-import Data.Functor.Compose
-import Data.IORef
-import Data.Typeable
-import Foreign.C.Types
-import GHC.IO.FD (FD(..))
-import Numeric.Natural
-import System.Environment
-import System.IO as IO
-import System.Posix.Types
-import qualified System.Process as P
-import System.Posix.Process
-import System.Process.Typed
-import Debug.Trace
+import           Control.Concurrent.STM
+import           Control.Distributed.Closure
+import           Control.Exception
+import           Control.Monad
+import           Control.Monad.Trans.Class
+import           Control.Monad.Trans.Cont
+import           Data.Bifunctor
+import           Data.Binary
+import qualified Data.ByteString.Char8       as B
+import qualified Data.ByteString.Lazy.Char8  as L
+import           Data.Functor
+import           Data.Functor.Compose
+import           Data.Int
+import           Data.IORef
+import           Data.List
+import           Data.Typeable
+import           Debug.Trace
+import           Foreign.C.Types
+import           GHC.IO.FD                   (FD (..))
+import           Numeric.Natural
+import           System.Environment
+import           System.IO                   as IO
+import           System.Posix.Process
+import           System.Posix.Types
+import qualified System.Process              as P
+import           System.Process.Typed
 
 -- | A handle over a pool of local slave processes
 data Par = Par
@@ -70,9 +71,9 @@ data Par = Par
 
 data ParStats = ParStats
   { scheduledJobs :: Natural -- ^ Number of jobs in the pool
-  , poolSize :: Natural -- ^ Initial pool size
-  , busy     :: Natural -- ^ Number of busy slaves
-  , idle     :: Natural -- ^ number of idle slaves
+  , poolSize      :: Natural -- ^ Initial pool size
+  , busy          :: Natural -- ^ Number of busy slaves
+  , idle          :: Natural -- ^ number of idle slaves
   }
   deriving Show
 
@@ -86,7 +87,7 @@ newtype RResolver = RResolver
 withPar :: Natural -> (Par -> IO res) -> IO res
 withPar poolSize k = do
   runners <- forM [1 .. poolSize] $ \n -> do
-    (hInr,  hInw)  <- P.createPipe
+    (hInr , hInw ) <- P.createPipe
     (hOutr, hOutw) <- P.createPipe
     forkProcess $ do
       inp <- L.hGetContents hInr
@@ -98,30 +99,32 @@ withPar poolSize k = do
 
 makePar :: [RResolver] -> IO Par
 makePar runners = do
-    runnersT  <- newTVarIO runners
-    busyRef   <- newIORef 0
-    queuedRef <- newIORef 0
-    putDebugLn "[master] All slaves spawned"
-    let runPar dict input = do
-          atomicModifyIORef' queuedRef $ \n -> (n+1,())
-          runner <- atomically $ do
-            pp <- readTVar runnersT
-            case pp of
-              [] -> retry
-              p : pp -> writeTVar runnersT pp $> p
-          atomicModifyIORef' queuedRef $ \n -> (n-1,())
-          atomicModifyIORef' busyRef $ \n -> (n+1,())
-          (runner', res) <- runRResolver runner dict input `finally` atomicModifyIORef' busyRef (\n -> (n-1,()))
-          atomically $ modifyTVar runnersT (runner' :)
-          either fail return res
-        viewParStats = do
-          scheduledJobs <- readIORef queuedRef
-          idle <- genericLength <$> readTVarIO runnersT
-          busy <- readIORef busyRef
-          return ParStats{..}
-    return Par{..}
-  where
-    !poolSize = genericLength runners
+  runnersT  <- newTVarIO runners
+  busyRef   <- newIORef 0
+  queuedRef <- newIORef 0
+  putDebugLn "[master] All slaves spawned"
+  let
+    runPar dict input = do
+      atomicModifyIORef' queuedRef $ \n -> (n + 1, ())
+      runner <- atomically $ do
+        pp <- readTVar runnersT
+        case pp of
+          []     -> retry
+          p : pp -> writeTVar runnersT pp $> p
+      atomicModifyIORef' queuedRef $ \n -> (n - 1, ())
+      atomicModifyIORef' busyRef $ \n -> (n + 1, ())
+      (runner', res) <-
+        runRResolver runner dict input
+          `finally` atomicModifyIORef' busyRef (\n -> (n - 1, ()))
+      atomically $ modifyTVar runnersT (runner' :)
+      either fail return res
+    viewParStats = do
+      scheduledJobs <- readIORef queuedRef
+      idle          <- genericLength <$> readTVarIO runnersT
+      busy          <- readIORef busyRef
+      return ParStats { .. }
+  return Par { .. }
+  where !poolSize = genericLength runners
 
 runSlave :: Handle -> L.ByteString -> RResolver
 runSlave sendH lazyOutput = RResolver $ \dict input -> do
@@ -136,34 +139,33 @@ runSlave sendH lazyOutput = RResolver $ \dict input -> do
       --  cause decode to fail with the error "not enough bytes"
       case decodeOrFail lazyOutput of
         Right (rest, _, res) -> return (runSlave sendH rest, res >>= decode)
-        Left (_, _, err) -> fail err
-  where
-    reply :: Dict (Serializable a) -> IO a -> IO L.ByteString
-    reply Dict action = do
-      -- NOTE Error handling
-      --  We encode twice to guard against lazy exceptions
-      bytes <- try @SomeException $ do
-        res <- try @SomeException action
-        evaluate $ encode $ first show res
-      return (encode $ first show bytes)
+        Left  (_   , _, err) -> fail err
+ where
+  reply :: Dict (Serializable a) -> IO a -> IO L.ByteString
+  reply Dict action = do
+    -- NOTE Error handling
+    --  We encode twice to guard against lazy exceptions
+    bytes <- try @SomeException $ do
+      res <- try @SomeException action
+      evaluate $ encode $ first show res
+    return (encode $ first show bytes)
 
 --------------------------------------------------------
 -- parMain
 
 setupParServer :: Show id => id -> L.ByteString -> Handle -> IO ()
 setupParServer n inp hOut = do
-      let sayLoud msg = putDebugLn $ "[slave " ++ show n ++ "] " ++ msg
-          loopServer inp =
-            case decodeOrFail inp of
-              Left (_,_,err) -> fail err
-              Right (rest,_,task) -> do
-                sayLoud "Received task"
-                res <- unclosure task
-                L.hPutStr hOut res
-                hFlush hOut
-                loopServer rest
-      sayLoud "Starting"
-      loopServer inp
+  let sayLoud msg = putDebugLn $ "[slave " ++ show n ++ "] " ++ msg
+      loopServer inp = case decodeOrFail inp of
+        Left  (_   , _, err ) -> fail err
+        Right (rest, _, task) -> do
+          sayLoud "Received task"
+          res <- unclosure task
+          L.hPutStr hOut res
+          hFlush hOut
+          loopServer rest
+  sayLoud "Starting"
+  loopServer inp
 
 ---------------------------------
 -- Debugging
