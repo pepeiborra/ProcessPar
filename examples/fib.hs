@@ -1,6 +1,5 @@
-{-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StaticPointers #-}
+{-# LANGUAGE TypeApplications #-}
 
 import Control.Concurrent.Async
 import Control.Exception
@@ -21,5 +20,6 @@ purefib = return . fib
 main = withPar 4 $ \par -> do
   args <- map read <$> getArgs
   res <- forConcurrently args $ \n ->
+    -- try $ fib n
     try @SomeException $ runPar par (static Dict) (static purefib `cap` cpure (static Dict) n)
   print res

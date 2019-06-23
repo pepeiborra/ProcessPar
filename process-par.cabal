@@ -7,6 +7,11 @@ copyright: Jose Iborra Lopez 2019
 build-type: Simple
 cabal-version: >= 1.8
 
+Flag examples
+     description: build the examples
+     default: False
+     manual: True
+
 library
   build-depends:
     base,
@@ -22,8 +27,22 @@ library
   exposed-modules:
     ProcessPar
 
--- executable example
---   hs-source-dirs:      examples
---   main-is:             Example.hs
---   build-depends:       async, base, process-par
---   ghc-options:         -threaded
+executable fib 
+  if flag(examples)
+    buildable:True
+  else
+    buildable:False
+  hs-source-dirs:      examples
+  main-is:             fib.hs
+  build-depends:       async, base, process-par
+  ghc-options:         -threaded
+
+executable lines
+  if flag(examples)
+    buildable:True
+  else
+    buildable:False
+  hs-source-dirs:      examples
+  main-is:             lines.hs
+  build-depends:       async, base, bytestring, process-par
+  ghc-options:         -threaded
