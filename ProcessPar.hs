@@ -1,11 +1,11 @@
-{-# LANGUAGE BangPatterns     #-}
-{-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE TypeOperators #-}
-{-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StaticPointers #-}
+{-# LANGUAGE StaticPointers      #-}
+{-# LANGUAGE TypeApplications    #-}
+{-# LANGUAGE TypeOperators       #-}
 -- | Run computations out of process.
 --   While this is usually unnecessary while writing Haskell programs, it can be useful when working with the FFI.
 --   It relies on the 'distributed-closure' package to serialize closures to slave processes.
@@ -42,24 +42,24 @@ import           Control.Monad.Trans.Class
 import           Control.Monad.Trans.Cont
 import           Data.Bifunctor
 import           Data.Binary
-import           Data.Int
-import           Data.List
-import qualified Data.ByteString.Char8         as B
-import qualified Data.ByteString.Lazy.Char8    as L
+import qualified Data.ByteString.Char8       as B
+import qualified Data.ByteString.Lazy.Char8  as L
 import           Data.Functor
 import           Data.Functor.Compose
+import           Data.Int
 import           Data.IORef
+import           Data.List
 import           Data.Typeable
+import           Debug.Trace
 import           Foreign.C.Types
-import           GHC.IO.FD                      ( FD(..) )
+import           GHC.IO.FD                   (FD (..))
 import           Numeric.Natural
 import           System.Environment
-import           System.IO                     as IO
-import           System.Posix.Types
-import qualified System.Process                as P
+import           System.IO                   as IO
 import           System.Posix.Process
+import           System.Posix.Types
+import qualified System.Process              as P
 import           System.Process.Typed
-import           Debug.Trace
 
 -- | A handle over a pool of local slave processes
 data Par = Par
@@ -71,9 +71,9 @@ data Par = Par
 
 data ParStats = ParStats
   { scheduledJobs :: Natural -- ^ Number of jobs in the pool
-  , poolSize :: Natural -- ^ Initial pool size
-  , busy     :: Natural -- ^ Number of busy slaves
-  , idle     :: Natural -- ^ number of idle slaves
+  , poolSize      :: Natural -- ^ Initial pool size
+  , busy          :: Natural -- ^ Number of busy slaves
+  , idle          :: Natural -- ^ number of idle slaves
   }
   deriving Show
 
